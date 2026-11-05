@@ -144,16 +144,10 @@ fn separable_route_matches_the_direct_route() {
 
 #[test]
 fn separable_passes_do_not_clamp_in_between() {
-    // The horizontal pass alone would give -255 and +255; the vertical kernel then scales by
-    // one half. Clamping after the first pass would lose the negative lobe entirely.
-    let img = gray(&[&[255, 0, 255]]);
-    let out = convolve_separable(&img, &[-1.0, 0.0, 1.0], &[-0.5], BorderMode::Zero).unwrap();
-    // Horizontal: [0 - 0, 255 - 255, 0 - 0] = [0, 0, 0] with the centre taps... computed below.
-    // x = 0: -1 * 0 (border) + 1 * 0 = 0; x = 1: -255 + 255 = 0; x = 2: -0 + 0 = 0.
-    assert_eq!(gray_rows(&out), [[0, 0, 0]]);
+    // The horizontal pass gives [0, -200, 0] (left neighbour minus right neighbour, zero
+    // border). The vertical weight of -0.5 turns that into [0, 100, 0]; clamping the
+    // intermediate result to 0..=255 would lose the negative value and give all zeros.
     let img = gray(&[&[0, 0, 200]]);
-    // Horizontal: [0, 200, 0]... x = 1 reads right neighbour 200; x = 2 reads -0 + border 0.
-    // A negative horizontal result times a negative vertical weight must come out positive.
     let out = convolve_separable(&img, &[1.0, 0.0, -1.0], &[-0.5], BorderMode::Zero).unwrap();
     assert_eq!(gray_rows(&out), [[0, 100, 0]]);
 }
