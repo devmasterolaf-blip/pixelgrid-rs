@@ -36,3 +36,11 @@ pub fn picture(img: &Image<Gray>) -> Vec<String> {
 pub fn rgb_pattern(width: u32, height: u32) -> Image<Rgb> {
     Image::from_fn(width, height, |x, y| Rgb::new((10 * x) as u8, (10 * y) as u8, (x + y) as u8))
 }
+
+/// A per-test scratch directory under the crate's `target/` folder, created empty.
+pub fn scratch_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-scratch").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}

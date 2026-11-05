@@ -136,3 +136,58 @@ impl fmt::Display for EncodeError {
 }
 
 impl std::error::Error for EncodeError {}
+
+/// The umbrella error for operations that touch files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    /// Reading or writing the file failed. `message` is the operating system's description.
+    Io { path: String, message: String },
+    /// The file extension does not name a supported format.
+    UnknownFormat { path: String },
+    Decode(DecodeError),
+    Encode(EncodeError),
+    Image(ImageError),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io { path, message } => write!(f, "{path}: {message}"),
+            Error::UnknownFormat { path } => {
+                write!(f, "{path}: cannot tell the image format from the file name")
+            }
+            Error::Decode(e) => e.fmt(f),
+            Error::Encode(e) => e.fmt(f),
+            Error::Image(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Decode(e) => Some(e),
+            Error::Encode(e) => Some(e),
+            Error::Image(e) => Some(e),
+            Error::Io { .. } | Error::UnknownFormat { .. } => None,
+        }
+    }
+}
+
+impl From<DecodeError> for Error {
+    fn from(e: DecodeError) -> Self {
+        Error::Decode(e)
+    }
+}
+
+impl From<EncodeError> for Error {
+    fn from(e: EncodeError) -> Self {
+        Error::Encode(e)
+    }
+}
+
+impl From<ImageError> for Error {
+    fn from(e: ImageError) -> Self {
+        Error::Image(e)
+    }
+}
