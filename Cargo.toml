@@ -1,0 +1,15 @@
+[package]
+name = "pixelgrid"
+version = "0.1.0"
+edition = "2021"
+description = "A small 2D raster image library in plain Rust: pixel buffers, Netpbm and BMP I/O, drawing, transforms and filters"
+license = "MIT"
+readme = "README.md"
+keywords = ["image", "raster", "netpbm", "bmp", "graphics"]
+categories = ["multimedia::images", "graphics"]
+
+[lib]
+name = "pixelgrid"
+path = "src/lib.rs"
+
+[dependencies]
