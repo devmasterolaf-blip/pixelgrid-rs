@@ -128,7 +128,7 @@ fn median_by_hand() {
     assert_eq!(out[(0, 0)], Gray(5));
     // Top-right window: 9,3,3,9,3,3,5,2,2 -> sorted 2,2,3,3,3,3,5,9,9 -> 3.
     assert_eq!(out[(2, 0)], Gray(3));
-    // A window that covers the whole image and more still returns the overall median here.
+    // Clamped windows repeat the edge pixel, so the two ends keep their own values.
     assert_eq!(median(&gray(&[&[1, 2, 100]]), 1).as_slice(), [Gray(1), Gray(2), Gray(100)]);
 }
 
