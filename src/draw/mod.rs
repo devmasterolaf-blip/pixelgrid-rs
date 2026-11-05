@@ -2,8 +2,10 @@
 //! may lie partly or completely outside it.
 
 pub mod line;
+pub mod shapes;
 
 pub use line::{fill_rect, line, rect, thick_line};
+pub use shapes::{circle, ellipse, fill_circle, fill_ellipse};
 
 use crate::image::Image;
 use crate::pixel::Pixel;
