@@ -272,6 +272,10 @@ repository. Tests that need files write them under `target/test-scratch/`.
 - Image sizes are limited by memory only; the tool does not guard against requests such as
   `resize 100000x100000`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
