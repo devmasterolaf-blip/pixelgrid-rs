@@ -122,8 +122,10 @@ pixelgrid help | --help | --version
 ```
 
 The input format is detected from the file content, the output format follows the extension
-(`.pbm`, `.pgm`, `.ppm`, `.pnm`, `.bmp`). Operations run from left to right. The whole command
-line is checked before the input is read, so a typo never costs you a long computation.
+(`.pbm`, `.pgm`, `.ppm`, `.pnm`, `.bmp`). Operations run from left to right. The command line
+is parsed completely before the input is read, so a misspelt operation or a missing argument is
+reported at once (exit code 2). Values that parse but cannot be used, such as `blur 0` or a
+crop rectangle outside the image, are reported by the step that rejects them (exit code 5).
 
 The session below starts from a 4x4 image typed by hand. Run it after
 `cargo build --release`; `pixelgrid` stands for `target/release/pixelgrid`. The lines that
@@ -270,7 +272,8 @@ repository. Tests that need files write them under `target/test-scratch/`.
 - Everything is single-threaded and written for clarity. Blur and median filters cost time
   proportional to their radius per pixel.
 - Image sizes are limited by memory only; the tool does not guard against requests such as
-  `resize 100000x100000`.
+  `resize 100000x100000`, and shapes with enormous coordinates or radii are walked pixel by
+  pixel even where they lie outside the image.
 
 ## Contributing
 
