@@ -26,8 +26,13 @@ pub fn gaussian_kernel(sigma: f32) -> Result<Vec<f32>, ImageError> {
         });
     }
     let radius = (3.0 * sigma).ceil() as i32;
-    let weights: Vec<f32> =
-        (-radius..=radius).map(|i| (-((i * i) as f32) / (2.0 * sigma * sigma)).exp()).collect();
+    // Dividing by sigma before squaring keeps a tiny sigma from underflowing to 0 / 0.
+    let weights: Vec<f32> = (-radius..=radius)
+        .map(|i| {
+            let t = i as f32 / sigma;
+            (-0.5 * t * t).exp()
+        })
+        .collect();
     let sum: f32 = weights.iter().sum();
     Ok(weights.into_iter().map(|w| w / sum).collect())
 }

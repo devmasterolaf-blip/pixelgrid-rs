@@ -65,6 +65,16 @@ fn gaussian_blur_impulse_by_hand() {
 }
 
 #[test]
+fn a_vanishing_sigma_gives_the_identity_kernel() {
+    // 2 * sigma^2 underflows to zero for these, which used to turn the centre weight into NaN.
+    for sigma in [1e-30, f32::MIN_POSITIVE, 1e-3] {
+        assert_eq!(gaussian_kernel(sigma).unwrap(), [0.0, 1.0, 0.0], "sigma {sigma}");
+    }
+    let img = gray(&[&[0, 60, 255], &[7, 8, 9]]);
+    assert_eq!(gaussian_blur(&img, 1e-30).unwrap(), img);
+}
+
+#[test]
 fn gaussian_blur_rejects_bad_sigma() {
     let img = gray(&[&[1]]);
     for sigma in [0.0, -1.0, f32::NAN, f32::INFINITY] {
