@@ -5,6 +5,7 @@ pub mod color;
 pub mod draw;
 pub mod dynimage;
 pub mod error;
+pub mod filter;
 pub mod image;
 pub mod io;
 pub mod pixel;
