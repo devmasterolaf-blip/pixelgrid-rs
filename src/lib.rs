@@ -12,6 +12,6 @@ pub mod view;
 
 pub use dynimage::DynImage;
 pub use error::{DecodeError, EncodeError, Error, ImageError};
-pub use image::{Image, Rect};
+pub use image::{Connectivity, Image, Rect};
 pub use pixel::{Gray, Pixel, Rgb, Rgba};
 pub use view::{SubImage, SubImageMut};

@@ -31,6 +31,36 @@ impl Rect {
     }
 }
 
+/// Which neighbours of a pixel count as adjacent to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Connectivity {
+    /// The pixels above, below, left and right.
+    Four,
+    /// The four edge neighbours plus the four diagonal ones.
+    Eight,
+}
+
+impl Connectivity {
+    /// The `(dx, dy)` offsets of the neighbours.
+    pub fn offsets(self) -> &'static [(i32, i32)] {
+        const ALL: [(i32, i32); 8] =
+            [(0, -1), (-1, 0), (1, 0), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)];
+        match self {
+            Connectivity::Four => &ALL[..4],
+            Connectivity::Eight => &ALL,
+        }
+    }
+
+    /// Parses `"4"` or `"8"`.
+    pub fn from_name(name: &str) -> Option<Connectivity> {
+        match name {
+            "4" => Some(Connectivity::Four),
+            "8" => Some(Connectivity::Eight),
+            _ => None,
+        }
+    }
+}
+
 /// A `width` x `height` grid of pixels stored row by row, top row first.
 ///
 /// Either dimension may be zero, which gives an empty image.

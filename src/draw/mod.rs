@@ -1,10 +1,12 @@
 //! Drawing primitives. Coordinates are signed and everything is clipped to the image, so shapes
 //! may lie partly or completely outside it.
 
+pub mod flood;
 pub mod line;
 pub mod polygon;
 pub mod shapes;
 
+pub use flood::flood_fill;
 pub use line::{fill_rect, line, rect, thick_line};
 pub use polygon::{fill_polygon, polygon, FillRule};
 pub use shapes::{circle, ellipse, fill_circle, fill_ellipse};
