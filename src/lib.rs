@@ -1,5 +1,5 @@
-//! `pixelgrid` is a small 2D raster image library with no dependencies outside the standard
-//! library.
+// The README is the crate documentation, which also makes its examples run as doc tests.
+#![doc = include_str!("../README.md")]
 
 pub mod cli;
 pub mod color;
