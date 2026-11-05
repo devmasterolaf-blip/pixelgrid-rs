@@ -110,7 +110,7 @@ fn floyd_steinberg_colour_keeps_alpha() {
     let out = dither_floyd_steinberg(&img, &Palette::rgb_cube(2).unwrap());
     assert!(out.pixels().all(|p| p.a == 99));
     assert!(out.pixels().all(|p| [p.r, p.g, p.b].iter().all(|v| *v == 0 || *v == 255)));
-    // Mostly red, sometimes not; never fully green in the first pixel.
+    // The first pixel carries no error yet: 200 -> 255, 60 -> 0 and 128 -> 255.
     assert_eq!(out[(0, 0)], Rgba::new(255, 0, 255, 99));
 }
 

@@ -8,6 +8,7 @@ pub mod error;
 pub mod filter;
 pub mod image;
 pub mod io;
+pub mod label;
 pub mod pixel;
 pub mod transform;
 pub mod view;
