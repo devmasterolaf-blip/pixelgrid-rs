@@ -8,6 +8,7 @@ pub mod error;
 pub mod image;
 pub mod io;
 pub mod pixel;
+pub mod transform;
 pub mod view;
 
 pub use dynimage::DynImage;
