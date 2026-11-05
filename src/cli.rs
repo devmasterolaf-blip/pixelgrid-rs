@@ -1,12 +1,16 @@
 //! The command-line front end, kept in the library so that it can be tested without spawning a
 //! process: [`run`] takes the arguments and two writers and returns the exit code.
 
+mod ops;
+
 use std::io::Write;
 
 use crate::compare::compare_dyn;
 use crate::dynimage::DynImage;
-use crate::error::{Error, ImageError};
-use crate::io::{self, Format};
+use crate::error::{EncodeError, Error, ImageError};
+use crate::io::bmp::RowOrder;
+use crate::io::pnm::PnmEncoding;
+use crate::io::{self, EncodeOptions, Format};
 
 /// Everything went well; for `diff`, the images match.
 pub const EXIT_OK: i32 = 0;
@@ -25,9 +29,39 @@ const USAGE: &str = "\
 pixelgrid - a small raster image tool
 
 Usage:
+  pixelgrid [options] <input> [operation...] <output>
   pixelgrid info <file>
   pixelgrid diff <a> <b> [--tolerance N]
   pixelgrid help | --help | --version
+
+The input format is detected from the file content (PBM, PGM, PPM, BMP); the
+output format follows the extension (.pbm, .pgm, .ppm, .pnm, .bmp).
+
+Options:
+  --ascii       write plain-text Netpbm files instead of binary ones
+  --top-down    write BMP files with the top row first
+
+Operations, applied from left to right:
+  resize WxH [nearest|bilinear|bicubic]   scale to WxH (default bilinear)
+  crop X Y W H                            keep the rectangle at X,Y
+  flip h|v                                mirror left-right or top-bottom
+  rotate DEGREES                          rotate clockwise, growing the canvas
+  blur SIGMA                              Gaussian blur
+  box RADIUS                              box blur
+  median RADIUS                           median filter
+  sharpen                                 3x3 sharpening
+  sobel                                   edge strength as a grey image
+  gray | rgb | rgba                       convert the pixel type
+  flatten COLOUR                          composite alpha over COLOUR
+  threshold N|otsu                        binarize on luma > N
+  equalize                                histogram equalization
+  brightness N                            add N to every colour channel
+  contrast FACTOR                         scale contrast around mid-grey
+  gamma G                                 gamma correction
+  invert                                  negative
+  dither fs|bayer2|bayer4|bayer8 LEVELS   reduce to LEVELS values per channel
+
+Colours are names such as 'red' or hex values such as '#ff8800'.
 
 Exit codes:
   0  success (diff: the images match)
@@ -107,8 +141,57 @@ fn dispatch(args: &[String], out: &mut dyn Write) -> Result<i32, CliError> {
         }
         "info" => info(&args[1..], out),
         "diff" => diff(&args[1..], out),
-        other => Err(CliError::usage(format!("unknown command '{other}'"))),
+        _ => pipeline(args),
     }
+}
+
+/// `[options] <input> [operation...] <output>`: loads, transforms and saves one image.
+fn pipeline(args: &[String]) -> Result<i32, CliError> {
+    let mut options = EncodeOptions::default();
+    let mut rest = args;
+    while let [first, tail @ ..] = rest {
+        match first.as_str() {
+            "--ascii" => options.pnm_encoding = PnmEncoding::Ascii,
+            "--top-down" => options.bmp_row_order = RowOrder::TopDown,
+            other if other.starts_with("--") => {
+                return Err(CliError::usage(format!("unknown option '{other}'")));
+            }
+            _ => break,
+        }
+        rest = tail;
+    }
+    let (input, middle, output) = match rest {
+        [] => return Err(CliError::usage("no input file given")),
+        [only] => return Err(CliError::usage(format!("unknown command '{only}'"))),
+        [input, middle @ .., output] => (input, middle, output),
+    };
+    // Everything that can be checked without reading the input is checked first.
+    let format = Format::from_path(output).ok_or_else(|| Error::UnknownFormat { path: output.clone() })?;
+    let steps = ops::parse_ops(middle)?;
+
+    let (mut image, _) = load(input)?;
+    for step in &steps {
+        image = ops::apply(image, &step.op)
+            .map_err(|e| CliError { code: EXIT_FAILED, message: format!("{}: {e}", step.name) })?;
+    }
+    // Grey to RGB loses nothing, so a grey result may go straight into a PPM file. Every other
+    // mismatch needs an explicit conversion step.
+    if format == Format::Ppm && matches!(image, DynImage::Gray(_)) {
+        image = image.to_rgb().into();
+    }
+    let bytes = io::encode(&image, format, &options).map_err(|e| {
+        let hint = match (&e, &image, format) {
+            (EncodeError::UnsupportedPixel { .. }, DynImage::Rgba(_), Format::Ppm | Format::Pnm) => {
+                "; add 'flatten COLOUR' or 'rgb' before the output"
+            }
+            (EncodeError::UnsupportedPixel { .. }, _, _) => "; add 'gray' before the output",
+            _ => "",
+        };
+        CliError { code: EXIT_FAILED, message: format!("{output}: {e}{hint}") }
+    })?;
+    std::fs::write(output, bytes)
+        .map_err(|e| Error::Io { path: output.clone(), message: e.to_string() })?;
+    Ok(EXIT_OK)
 }
 
 /// Parses a number, naming the command and the argument in the error.
