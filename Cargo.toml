@@ -12,4 +12,8 @@ categories = ["multimedia::images", "graphics"]
 name = "pixelgrid"
 path = "src/lib.rs"
 
+[[bin]]
+name = "pixelgrid"
+path = "src/main.rs"
+
 [dependencies]

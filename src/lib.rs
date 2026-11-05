@@ -1,6 +1,7 @@
 //! `pixelgrid` is a small 2D raster image library with no dependencies outside the standard
 //! library.
 
+pub mod cli;
 pub mod color;
 pub mod compare;
 pub mod draw;
