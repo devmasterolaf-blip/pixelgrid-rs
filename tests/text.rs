@@ -122,3 +122,25 @@ fn text_is_clipped_and_leaves_the_background_alone() {
     draw_text(&mut img, 0, 0, "X", ON, 0);
     assert!(img.pixels().all(|p| p.0 == 0));
 }
+
+#[test]
+fn huge_scales_saturate_instead_of_overflowing() {
+    assert_eq!(text_size("AB", u32::MAX), (u32::MAX, u32::MAX));
+    assert_eq!(text_size("A", u32::MAX / 3), (u32::MAX / 3 * 3, u32::MAX));
+    assert_eq!(text_size("A\nB", 1 << 30), (3 << 30, u32::MAX));
+
+    // At a scale of 2^31 one font pixel is far larger than the image. The top-left font pixel
+    // of T is set and covers everything; the top-left font pixel of A is not.
+    let scale = 1 << 31;
+    let mut img: Image<Gray> = Image::new(4, 4);
+    draw_text(&mut img, 0, 0, "A", ON, scale);
+    assert!(img.pixels().all(|p| p.0 == 0));
+    draw_text(&mut img, 0, 0, "T", ON, scale);
+    assert!(img.pixels().all(|p| p.0 == 255));
+    // Shifted left by one font pixel, the middle column of A's top row lands on the image.
+    let mut img: Image<Gray> = Image::new(4, 4);
+    draw_text(&mut img, i32::MIN, 0, "A", ON, scale);
+    assert!(img.pixels().all(|p| p.0 == 255));
+    draw_text(&mut img, i32::MAX, i32::MAX, "XYZ\nXYZ", Gray(1), u32::MAX);
+    assert!(img.pixels().all(|p| p.0 == 255));
+}

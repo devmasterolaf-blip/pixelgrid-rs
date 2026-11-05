@@ -91,15 +91,19 @@ fn rows(bits: u16) -> [u8; 5] {
 ///
 /// Characters advance by `GLYPH_WIDTH + 1` and lines by `GLYPH_HEIGHT + 1` font pixels; the
 /// trailing gap after the last column and row is not counted. Empty text measures `(0, 0)`.
+/// A size that does not fit in a `u32` is reported as `u32::MAX`.
 pub fn text_size(text: &str, scale: u32) -> (u32, u32) {
     if text.is_empty() || scale == 0 {
         return (0, 0);
     }
-    let lines = text.split('\n').count() as u32;
-    let longest = text.split('\n').map(|l| l.chars().count()).max().unwrap_or(0) as u32;
-    let width = (longest * (GLYPH_WIDTH + 1)).saturating_sub(1) * scale;
-    let height = (lines * (GLYPH_HEIGHT + 1) - 1) * scale;
-    (width, height)
+    let lines = text.split('\n').count() as u64;
+    let longest = text.split('\n').map(|l| l.chars().count()).max().unwrap_or(0) as u64;
+    let scaled = |font_pixels: u64| {
+        u32::try_from(font_pixels.saturating_mul(u64::from(scale))).unwrap_or(u32::MAX)
+    };
+    let width = longest.saturating_mul(u64::from(GLYPH_WIDTH + 1)).saturating_sub(1);
+    let height = lines.saturating_mul(u64::from(GLYPH_HEIGHT + 1)) - 1;
+    (scaled(width), scaled(height))
 }
 
 /// Draws `text` with its top-left corner at `(x, y)`, clipped to the image.
@@ -108,19 +112,22 @@ pub fn text_size(text: &str, scale: u32) -> (u32, u32) {
 /// `x`. Characters the font does not have are drawn as a solid block. Only the glyph pixels
 /// are written, so the background shows through.
 pub fn draw_text<P: Pixel>(image: &mut Image<P>, x: i32, y: i32, text: &str, color: P, scale: u32) {
-    let advance = i64::from((GLYPH_WIDTH + 1) * scale);
-    let line_height = i64::from((GLYPH_HEIGHT + 1) * scale);
+    // Positions are computed in i64 and saturate, so no scale or text length can overflow;
+    // anything that far out is clipped away anyway.
+    let scale_px = i64::from(scale);
+    let advance = i64::from(GLYPH_WIDTH + 1) * scale_px;
+    let line_height = i64::from(GLYPH_HEIGHT + 1) * scale_px;
     let clamp = |v: i64| v.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     for (line_index, line) in text.split('\n').enumerate() {
-        let top = i64::from(y) + line_index as i64 * line_height;
+        let top = i64::from(y).saturating_add((line_index as i64).saturating_mul(line_height));
         for (column, c) in line.chars().enumerate() {
-            let left = i64::from(x) + column as i64 * advance;
+            let left = i64::from(x).saturating_add((column as i64).saturating_mul(advance));
             let glyph_rows = glyph(c).unwrap_or_else(|| rows(UNKNOWN));
             for (gy, bits) in glyph_rows.iter().enumerate() {
                 for gx in 0..GLYPH_WIDTH {
                     if bits & (0b100 >> gx) != 0 {
-                        let px = left + i64::from(gx * scale);
-                        let py = top + gy as i64 * i64::from(scale);
+                        let px = left.saturating_add(i64::from(gx) * scale_px);
+                        let py = top.saturating_add(gy as i64 * scale_px);
                         fill_rect(image, clamp(px), clamp(py), scale, scale, color);
                     }
                 }

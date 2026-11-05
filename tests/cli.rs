@@ -379,6 +379,8 @@ fn pipeline_draws_shapes_and_text() {
         draw(&["text", "0", "0", "1", "white", "Hi"]),
         ["#.#.###", "#.#..#.", "###..#.", "#.#..#.", "#.#.###"]
     );
+    // A scale far beyond the image is fine: one font pixel of the T covers the whole canvas.
+    assert_eq!(draw(&["text", "0", "0", "4000000000", "white", "T"]), ["#######"; 5]);
     // Later steps draw over earlier ones, and black erases.
     assert_eq!(
         draw(&["fill-rect", "0", "0", "7", "5", "white", "line", "0", "2", "6", "2", "black"]),
