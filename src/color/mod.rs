@@ -11,3 +11,7 @@ pub use gamma::{linear_to_srgb, mix_linear, relative_luminance, srgb_to_linear};
 pub mod parse;
 
 pub use parse::{named_color, parse_color, ColorParseError};
+
+pub mod blend;
+
+pub use blend::{blend, flatten, mul_div255, over, over_premultiplied, premultiply, unpremultiply, BlendMode};
