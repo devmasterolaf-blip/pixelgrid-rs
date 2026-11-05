@@ -50,3 +50,60 @@ impl fmt::Display for ImageError {
 }
 
 impl std::error::Error for ImageError {}
+
+/// Why image data could not be decoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodeError {
+    /// The data does not start with a signature this crate knows. `found` holds the first bytes
+    /// (at most two).
+    BadMagic { found: Vec<u8> },
+    /// The data ends inside the header, while `expected` was being read.
+    UnexpectedEof { offset: usize, expected: &'static str },
+    /// A header field or ASCII sample is not an unsigned decimal number.
+    InvalidNumber { offset: usize, field: &'static str, token: String },
+    /// Width or height is zero, or the image is too large to address.
+    InvalidDimensions { width: u64, height: u64 },
+    /// A Netpbm maxval outside `1..=65535`.
+    InvalidMaxval { value: u64 },
+    /// A sample is larger than the maxval declared in the header.
+    SampleOutOfRange { offset: usize, value: u32, maxval: u32 },
+    /// The pixel data is shorter than the header promises. Counts are bytes for binary data and
+    /// samples for ASCII data.
+    TruncatedRaster { expected: usize, actual: usize },
+    /// A header field holds a value the format does not allow.
+    InvalidHeader { field: &'static str, value: i64 },
+    /// The file is valid but uses a feature this crate does not implement.
+    Unsupported { feature: String },
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecodeError::BadMagic { found } => write!(f, "unrecognised file signature {found:?}"),
+            DecodeError::UnexpectedEof { offset, expected } => {
+                write!(f, "unexpected end of data at byte {offset} while reading {expected}")
+            }
+            DecodeError::InvalidNumber { offset, field, token } => {
+                write!(f, "invalid {field} '{token}' at byte {offset}")
+            }
+            DecodeError::InvalidDimensions { width, height } => {
+                write!(f, "invalid image size {width}x{height}")
+            }
+            DecodeError::InvalidMaxval { value } => {
+                write!(f, "maxval {value} is outside 1..=65535")
+            }
+            DecodeError::SampleOutOfRange { offset, value, maxval } => {
+                write!(f, "sample {value} at byte {offset} exceeds the maxval {maxval}")
+            }
+            DecodeError::TruncatedRaster { expected, actual } => {
+                write!(f, "pixel data is truncated: expected {expected}, found {actual}")
+            }
+            DecodeError::InvalidHeader { field, value } => {
+                write!(f, "invalid header field {field}: {value}")
+            }
+            DecodeError::Unsupported { feature } => write!(f, "unsupported: {feature}"),
+        }
+    }
+}
+
+impl std::error::Error for DecodeError {}

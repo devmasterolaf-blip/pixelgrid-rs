@@ -2,12 +2,15 @@
 //! library.
 
 pub mod color;
+pub mod dynimage;
 pub mod error;
 pub mod image;
+pub mod io;
 pub mod pixel;
 pub mod view;
 
-pub use error::ImageError;
+pub use dynimage::DynImage;
+pub use error::{DecodeError, ImageError};
 pub use image::{Image, Rect};
 pub use pixel::{Gray, Pixel, Rgb, Rgba};
 pub use view::{SubImage, SubImageMut};
