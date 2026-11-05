@@ -2,9 +2,11 @@
 //! may lie partly or completely outside it.
 
 pub mod line;
+pub mod polygon;
 pub mod shapes;
 
 pub use line::{fill_rect, line, rect, thick_line};
+pub use polygon::{fill_polygon, polygon, FillRule};
 pub use shapes::{circle, ellipse, fill_circle, fill_ellipse};
 
 use crate::image::Image;
