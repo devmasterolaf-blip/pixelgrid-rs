@@ -10,7 +10,7 @@ pub mod pixel;
 pub mod view;
 
 pub use dynimage::DynImage;
-pub use error::{DecodeError, ImageError};
+pub use error::{DecodeError, EncodeError, ImageError};
 pub use image::{Image, Rect};
 pub use pixel::{Gray, Pixel, Rgb, Rgba};
 pub use view::{SubImage, SubImageMut};

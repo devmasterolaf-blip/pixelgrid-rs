@@ -107,3 +107,32 @@ impl fmt::Display for DecodeError {
 }
 
 impl std::error::Error for DecodeError {}
+
+/// Why an image could not be encoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EncodeError {
+    /// None of the supported formats can store an image without pixels.
+    EmptyImage { width: u32, height: u32 },
+    /// The format cannot store this pixel type, for example RGBA in a PPM file.
+    UnsupportedPixel { format: &'static str, pixel: &'static str },
+    /// The image is larger than the format's header fields can describe.
+    TooLarge { width: u32, height: u32 },
+}
+
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EncodeError::EmptyImage { width, height } => {
+                write!(f, "cannot encode an empty {width}x{height} image")
+            }
+            EncodeError::UnsupportedPixel { format, pixel } => {
+                write!(f, "{format} cannot store {pixel} pixels")
+            }
+            EncodeError::TooLarge { width, height } => {
+                write!(f, "a {width}x{height} image is too large for the format")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EncodeError {}

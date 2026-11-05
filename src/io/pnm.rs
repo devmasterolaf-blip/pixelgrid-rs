@@ -4,9 +4,9 @@
 //! 16-bit files) lose their extra precision.
 
 use crate::dynimage::DynImage;
-use crate::error::DecodeError;
+use crate::error::{DecodeError, EncodeError};
 use crate::image::Image;
-use crate::pixel::{Gray, Rgb};
+use crate::pixel::{Gray, Pixel, Rgb};
 
 /// The parsed header of a Netpbm file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,4 +251,108 @@ pub fn decode_pnm(data: &[u8]) -> Result<DynImage, DecodeError> {
         DynImage::Gray(Image::<Gray>::from_raw(width, height, &samples).expect("sample count was checked"))
     };
     Ok(image)
+}
+
+/// Which of the two Netpbm representations to write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PnmEncoding {
+    /// Decimal text ("plain" Netpbm, magic P1 to P3).
+    Ascii,
+    /// Raw bytes (magic P4 to P6).
+    #[default]
+    Binary,
+}
+
+/// Plain Netpbm files should not have lines longer than 70 characters.
+const MAX_LINE: usize = 70;
+
+fn header<P: Pixel>(image: &Image<P>, magic: u8, maxval: Option<u8>) -> Result<Vec<u8>, EncodeError> {
+    let (width, height) = image.dimensions();
+    if image.is_empty() {
+        return Err(EncodeError::EmptyImage { width, height });
+    }
+    let mut out = format!("P{magic}\n{width} {height}\n");
+    if let Some(maxval) = maxval {
+        out.push_str(&format!("{maxval}\n"));
+    }
+    Ok(out.into_bytes())
+}
+
+/// Appends decimal tokens separated by single spaces, starting a new line at the end of each
+/// image row and whenever a line would grow past [`MAX_LINE`].
+fn write_tokens(out: &mut Vec<u8>, values: impl Iterator<Item = u8>, per_row: usize) {
+    let mut line = 0;
+    for (i, value) in values.enumerate() {
+        let token = value.to_string();
+        if i > 0 && i % per_row == 0 || line > 0 && line + 1 + token.len() > MAX_LINE {
+            out.push(b'\n');
+            line = 0;
+        }
+        if line > 0 {
+            out.push(b' ');
+            line += 1;
+        }
+        out.extend_from_slice(token.as_bytes());
+        line += token.len();
+    }
+    out.push(b'\n');
+}
+
+/// Encodes a grey image as PGM with maxval 255.
+pub fn encode_pgm(image: &Image<Gray>, encoding: PnmEncoding) -> Result<Vec<u8>, EncodeError> {
+    let values = image.pixels().map(|p| p.0);
+    match encoding {
+        PnmEncoding::Ascii => {
+            let mut out = header(image, 2, Some(255))?;
+            write_tokens(&mut out, values, image.width() as usize);
+            Ok(out)
+        }
+        PnmEncoding::Binary => {
+            let mut out = header(image, 5, Some(255))?;
+            out.extend(values);
+            Ok(out)
+        }
+    }
+}
+
+/// Encodes an RGB image as PPM with maxval 255.
+pub fn encode_ppm(image: &Image<Rgb>, encoding: PnmEncoding) -> Result<Vec<u8>, EncodeError> {
+    match encoding {
+        PnmEncoding::Ascii => {
+            let mut out = header(image, 3, Some(255))?;
+            write_tokens(&mut out, image.to_raw().into_iter(), image.width() as usize * 3);
+            Ok(out)
+        }
+        PnmEncoding::Binary => {
+            let mut out = header(image, 6, Some(255))?;
+            out.extend(image.to_raw());
+            Ok(out)
+        }
+    }
+}
+
+/// Encodes a grey image as a PBM bitmap. Values below 128 become black (bit 1), all others
+/// white (bit 0); threshold or dither first for anything smarter.
+pub fn encode_pbm(image: &Image<Gray>, encoding: PnmEncoding) -> Result<Vec<u8>, EncodeError> {
+    let black = |p: &Gray| p.0 < 128;
+    match encoding {
+        PnmEncoding::Ascii => {
+            let mut out = header(image, 1, None)?;
+            write_tokens(&mut out, image.pixels().map(|p| u8::from(black(p))), image.width() as usize);
+            Ok(out)
+        }
+        PnmEncoding::Binary => {
+            let mut out = header(image, 4, None)?;
+            for row in image.rows() {
+                for chunk in row.chunks(8) {
+                    let byte = chunk
+                        .iter()
+                        .enumerate()
+                        .fold(0u8, |acc, (i, p)| if black(p) { acc | 0x80 >> i } else { acc });
+                    out.push(byte);
+                }
+            }
+            Ok(out)
+        }
+    }
 }
