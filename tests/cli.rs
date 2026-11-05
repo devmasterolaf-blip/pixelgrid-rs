@@ -3,8 +3,8 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use common::{gray, gray_rows, rgb_pattern, scratch_dir};
-use pixelgrid::{cli, io, DynImage, Image, Rgb, Rgba};
+use common::{gray, gray_rows, mask, picture, rgb_pattern, scratch_dir};
+use pixelgrid::{cli, io, DynImage, Gray, Image, Rgb, Rgba};
 
 /// Runs the CLI in-process and returns `(exit code, stdout, stderr)`.
 fn run(args: &[&str]) -> (i32, String, String) {
@@ -347,4 +347,133 @@ fn the_example_from_the_readme_runs() {
     // A quarter turn after a symmetric blur equals the blur after the quarter turn.
     let other = dir.join("other.bmp");
     assert_eq!(pipe(&input, &["resize", "64x64", "rotate", "90", "blur", "1.5"], &other), image);
+}
+
+#[test]
+fn pipeline_draws_shapes_and_text() {
+    let dir = scratch_dir("cli_draw");
+    let blank = write(&dir, "blank.pgm", Image::<Gray>::new(7, 5));
+    let out = dir.join("out.pgm");
+    let draw = |ops: &[&str]| picture(&pipe(&blank, ops, &out).to_gray());
+    assert_eq!(
+        draw(&["line", "0", "0", "4", "4", "white"]),
+        ["#......", ".#.....", "..#....", "...#...", "....#.."]
+    );
+    assert_eq!(
+        draw(&["rect", "1", "0", "5", "4", "white"]),
+        [".#####.", ".#...#.", ".#...#.", ".#####.", "......."]
+    );
+    assert_eq!(
+        draw(&["fill-rect", "5", "3", "9", "9", "white", "fill-rect", "-2", "-2", "3", "4", "white"]),
+        ["#......", "#......", ".......", ".....##", ".....##"]
+    );
+    assert_eq!(
+        draw(&["circle", "3", "2", "2", "white"]),
+        ["..###..", ".#...#.", ".#...#.", ".#...#.", "..###.."]
+    );
+    assert_eq!(
+        draw(&["fill-circle", "0", "0", "1", "white"]),
+        ["##.....", "#......", ".......", ".......", "......."]
+    );
+    assert_eq!(
+        draw(&["text", "0", "0", "1", "white", "Hi"]),
+        ["#.#.###", "#.#..#.", "###..#.", "#.#..#.", "#.#.###"]
+    );
+    // Later steps draw over earlier ones, and black erases.
+    assert_eq!(
+        draw(&["fill-rect", "0", "0", "7", "5", "white", "line", "0", "2", "6", "2", "black"]),
+        ["#######", "#######", ".......", "#######", "#######"]
+    );
+}
+
+#[test]
+fn pipeline_narrows_drawing_colours_to_the_pixel_type() {
+    let dir = scratch_dir("cli_draw_colours");
+    let blank = write(&dir, "blank.pgm", Image::<Gray>::new(3, 1));
+    let out = dir.join("out.pgm");
+    // Grey images receive the luma of the colour: red is 76, #808080 stays 128.
+    let ops = ["fill-rect", "0", "0", "1", "1", "red", "fill-rect", "1", "0", "1", "1", "#808080"];
+    assert_eq!(gray_rows(&pipe(&blank, &ops, &out).to_gray()), [[76, 128, 0]]);
+    // After 'rgba' the alpha of the colour is stored as given.
+    let bmp = dir.join("out.bmp");
+    let image = pipe(&blank, &["rgba", "fill-rect", "2", "0", "1", "1", "#0a141e28"], &bmp).to_rgba();
+    assert_eq!(image.as_slice(), [Rgba::opaque(0, 0, 0), Rgba::opaque(0, 0, 0), Rgba::new(10, 20, 30, 40)]);
+}
+
+#[test]
+fn pipeline_flood_fill() {
+    let dir = scratch_dir("cli_flood");
+    let walls = write(&dir, "walls.pgm", mask(&["..#..", "..#..", "###.."]));
+    let out = dir.join("out.pgm");
+    let filled = pipe(&walls, &["flood", "0", "0", "#646464", "0"], &out);
+    assert_eq!(gray_rows(&filled.to_gray()), [[100, 100, 255, 0, 0], [100, 100, 255, 0, 0], [255, 255, 255, 0, 0]]);
+    // With the full tolerance the wall no longer stops the fill.
+    let flooded = pipe(&walls, &["flood", "0", "0", "#646464", "255"], &out);
+    assert_eq!(gray_rows(&flooded.to_gray()), [[100; 5]; 3]);
+    let (walls, out) = (path_str(&walls), path_str(&out));
+    assert_eq!(
+        run(&[walls, "flood", "5", "0", "white", "0", out]),
+        (5, String::new(), "pixelgrid: flood: pixel (5, 0) is outside the 5x3 image\n".to_string())
+    );
+}
+
+#[test]
+fn drawing_operations_validate_their_arguments() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["line", "0", "0", "4", "4"], "line: missing colour"),
+        (&["line", "0", "0", "4", "x", "red"], "line: invalid y1 'x'"),
+        (&["rect", "0", "0", "-4", "4", "red"], "rect: invalid width '-4'"),
+        (&["fill-circle", "0", "0", "2", "reddish"], "fill-circle: invalid colour 'reddish': unknown colour name 'reddish'"),
+        (&["text", "0", "0", "0", "red", "hi"], "text: invalid scale '0'"),
+        (&["text", "0", "0", "2", "red"], "text: missing text"),
+        (&["flood", "0", "0", "red", "300"], "flood: invalid tolerance '300'"),
+        (&["flood", "-1", "0", "red", "0"], "flood: invalid x '-1'"),
+    ];
+    for (ops, message) in cases {
+        let mut args = vec!["/nonexistent/in.pgm"];
+        args.extend_from_slice(ops);
+        args.push("out.pgm");
+        let expected = format!("pixelgrid: {message}\nTry 'pixelgrid help'.\n");
+        assert_eq!(run(&args), (2, String::new(), expected), "{ops:?}");
+    }
+}
+
+#[test]
+fn components_lists_connected_regions() {
+    let dir = scratch_dir("cli_components");
+    let blobs = write(&dir, "blobs.pgm", mask(&["##..#", "#...#", "....#"]));
+    let blobs = path_str(&blobs);
+    let expected = "2 components\n\
+                    1: area 3, bounds 0,0 2x2, centroid 0.33,0.33\n\
+                    2: area 3, bounds 4,0 1x3, centroid 4.00,1.00\n";
+    assert_eq!(run(&["components", blobs]), (0, expected.to_string(), String::new()));
+
+    // Diagonal neighbours join only with 8-connectivity, which is the default.
+    let diagonal = write(&dir, "diagonal.pgm", mask(&["#.", ".#"]));
+    let diagonal = path_str(&diagonal);
+    let joined = "1 component\n1: area 2, bounds 0,0 2x2, centroid 0.50,0.50\n";
+    assert_eq!(run(&["components", diagonal]), (0, joined.to_string(), String::new()));
+    let (code, out, _) = run(&["components", "--connectivity", "4", diagonal]);
+    assert_eq!((code, out.lines().next()), (0, Some("2 components")));
+
+    // Foreground is luma above the threshold.
+    let levels = write(&dir, "levels.pgm", gray(&[&[100, 0, 200]]));
+    let levels = path_str(&levels);
+    assert_eq!(run(&["components", levels]).1, "1 component\n1: area 1, bounds 2,0 1x1, centroid 2.00,0.00\n");
+    assert_eq!(run(&["components", levels, "--threshold", "50"]).1.lines().next(), Some("2 components"));
+    assert_eq!(run(&["components", levels, "--threshold", "200"]).1, "0 components\n");
+}
+
+#[test]
+fn components_validates_its_arguments() {
+    let hint = "Try 'pixelgrid help'.\n";
+    let usage = |args: &[&str], message: &str| {
+        assert_eq!(run(args), (2, String::new(), format!("pixelgrid: components: {message}\n{hint}")), "{args:?}");
+    };
+    usage(&["components"], "expected exactly one file");
+    usage(&["components", "a.pgm", "b.pgm"], "expected exactly one file");
+    usage(&["components", "a.pgm", "--threshold"], "--threshold needs a value");
+    usage(&["components", "a.pgm", "--threshold", "high"], "invalid threshold 'high'");
+    usage(&["components", "a.pgm", "--connectivity", "6"], "invalid connectivity '6'");
+    assert_eq!(run(&["components", "/nonexistent/a.pgm"]).0, 3);
 }

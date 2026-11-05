@@ -4,12 +4,13 @@ use std::str::FromStr;
 
 use super::CliError;
 use crate::color::flatten;
+use crate::draw;
 use crate::dynimage::DynImage;
 use crate::error::ImageError;
 use crate::filter::{self, BayerMatrix, Palette};
-use crate::image::Image;
+use crate::image::{Connectivity, Image};
 use crate::map_dyn;
-use crate::pixel::{Pixel, Rgb};
+use crate::pixel::{Pixel, Rgb, Rgba};
 use crate::transform::{self, Interpolation};
 
 /// How `dither` spreads the quantization error.
@@ -44,6 +45,11 @@ pub(super) enum Op {
     Gamma(f32),
     Invert,
     Dither(Dither, u32),
+    Line { from: (i32, i32), to: (i32, i32), color: Rgba },
+    Rect { x: i32, y: i32, width: u32, height: u32, color: Rgba, filled: bool },
+    Circle { cx: i32, cy: i32, radius: u32, color: Rgba, filled: bool },
+    Text { x: i32, y: i32, scale: u32, color: Rgba, text: String },
+    Flood { x: u32, y: u32, color: Rgba, tolerance: u8 },
 }
 
 /// A parsed step together with the name it was given under, for error messages.
@@ -83,6 +89,12 @@ impl<'a> Cursor<'a> {
             Ok(v) if v.is_finite() => Ok(v),
             _ => Err(invalid(op, what, token)),
         }
+    }
+
+    /// The next argument parsed as a colour, which may carry alpha.
+    fn color(&mut self, op: &str) -> Result<Rgba, CliError> {
+        let token = self.next(op, "colour")?;
+        token.parse().map_err(|e| CliError::usage(format!("{op}: invalid colour '{token}': {e}")))
     }
 
     /// Consumes the next argument only when `parse` accepts it.
@@ -165,6 +177,41 @@ fn parse_op(name: &str, args: &mut Cursor) -> Result<Op, CliError> {
             };
             Op::Dither(method, args.value(name, "levels")?)
         }
+        "line" => Op::Line {
+            from: (args.value(name, "x0")?, args.value(name, "y0")?),
+            to: (args.value(name, "x1")?, args.value(name, "y1")?),
+            color: args.color(name)?,
+        },
+        "rect" | "fill-rect" => Op::Rect {
+            x: args.value(name, "x")?,
+            y: args.value(name, "y")?,
+            width: args.value(name, "width")?,
+            height: args.value(name, "height")?,
+            color: args.color(name)?,
+            filled: name == "fill-rect",
+        },
+        "circle" | "fill-circle" => Op::Circle {
+            cx: args.value(name, "centre x")?,
+            cy: args.value(name, "centre y")?,
+            radius: args.value(name, "radius")?,
+            color: args.color(name)?,
+            filled: name == "fill-circle",
+        },
+        "text" => {
+            let (x, y) = (args.value(name, "x")?, args.value(name, "y")?);
+            let scale_token = args.next(name, "scale")?;
+            let scale = match scale_token.parse() {
+                Ok(scale) if scale >= 1 => scale,
+                _ => return Err(invalid(name, "scale", scale_token)),
+            };
+            Op::Text { x, y, scale, color: args.color(name)?, text: args.next(name, "text")?.to_string() }
+        }
+        "flood" => Op::Flood {
+            x: args.value(name, "x")?,
+            y: args.value(name, "y")?,
+            color: args.color(name)?,
+            tolerance: args.value(name, "tolerance")?,
+        },
         other => return Err(CliError::usage(format!("unknown operation '{other}'"))),
     })
 }
@@ -202,7 +249,9 @@ fn threshold<P: Pixel>(image: &Image<P>, level: Option<u8>) -> DynImage {
 }
 
 /// The operations that return an image of the pixel type they were given.
-fn apply_typed<P: Pixel>(image: Image<P>, op: &Op) -> Result<Image<P>, ImageError> {
+fn apply_typed<P: Pixel>(mut image: Image<P>, op: &Op) -> Result<Image<P>, ImageError> {
+    // Drawing colours are narrowed to the image's pixel type: grey images get the luma, and
+    // alpha is dropped where the image has none.
     Ok(match *op {
         Op::Resize(width, height, interpolation) => transform::resize(&image, width, height, interpolation)?,
         Op::Crop { x, y, width, height } => transform::crop(&image, x, y, width, height)?,
@@ -230,6 +279,28 @@ fn apply_typed<P: Pixel>(image: Image<P>, op: &Op) -> Result<Image<P>, ImageErro
                     filter::dither_ordered(&image, &palette, matrix, 255.0 / (levels - 1) as f32)
                 }
             }
+        }
+        Op::Line { from, to, color } => {
+            draw::line(&mut image, from.0, from.1, to.0, to.1, P::from_rgba(color));
+            image
+        }
+        Op::Rect { x, y, width, height, color, filled } => {
+            let shape = if filled { draw::fill_rect } else { draw::rect };
+            shape(&mut image, x, y, width, height, P::from_rgba(color));
+            image
+        }
+        Op::Circle { cx, cy, radius, color, filled } => {
+            let shape = if filled { draw::fill_circle } else { draw::circle };
+            shape(&mut image, cx, cy, radius, P::from_rgba(color));
+            image
+        }
+        Op::Text { x, y, scale, color, ref text } => {
+            draw::draw_text(&mut image, x, y, text, P::from_rgba(color), scale);
+            image
+        }
+        Op::Flood { x, y, color, tolerance } => {
+            draw::flood_fill(&mut image, x, y, P::from_rgba(color), tolerance, Connectivity::Four)?;
+            image
         }
         Op::ToGray | Op::ToRgb | Op::ToRgba | Op::Flatten(_) | Op::Threshold(_) | Op::Sobel => {
             unreachable!("handled by apply")

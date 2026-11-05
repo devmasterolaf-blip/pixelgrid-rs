@@ -8,9 +8,11 @@ use std::io::Write;
 use crate::compare::compare_dyn;
 use crate::dynimage::DynImage;
 use crate::error::{EncodeError, Error, ImageError};
+use crate::image::Connectivity;
 use crate::io::bmp::RowOrder;
 use crate::io::pnm::PnmEncoding;
 use crate::io::{self, EncodeOptions, Format};
+use crate::label::label_components;
 
 /// Everything went well; for `diff`, the images match.
 pub const EXIT_OK: i32 = 0;
@@ -32,6 +34,7 @@ Usage:
   pixelgrid [options] <input> [operation...] <output>
   pixelgrid info <file>
   pixelgrid diff <a> <b> [--tolerance N]
+  pixelgrid components <file> [--threshold N] [--connectivity 4|8]
   pixelgrid help | --help | --version
 
 The input format is detected from the file content (PBM, PGM, PPM, BMP); the
@@ -60,8 +63,17 @@ Operations, applied from left to right:
   gamma G                                 gamma correction
   invert                                  negative
   dither fs|bayer2|bayer4|bayer8 LEVELS   reduce to LEVELS values per channel
+  line X0 Y0 X1 Y1 COLOUR                 one-pixel line
+  rect X Y W H COLOUR                     rectangle outline
+  fill-rect X Y W H COLOUR                filled rectangle
+  circle CX CY RADIUS COLOUR              circle outline
+  fill-circle CX CY RADIUS COLOUR         filled circle
+  text X Y SCALE COLOUR STRING            text in the built-in 3x5 font
+  flood X Y COLOUR TOLERANCE              flood fill from the seed X,Y
 
-Colours are names such as 'red' or hex values such as '#ff8800'.
+Colours are names such as 'red' or hex values such as '#ff8800' or
+'#ff880080' (with alpha). Shapes are clipped to the image. 'components'
+lists the connected regions whose luma is above the threshold (default 127).
 
 Exit codes:
   0  success (diff: the images match)
@@ -141,6 +153,7 @@ fn dispatch(args: &[String], out: &mut dyn Write) -> Result<i32, CliError> {
         }
         "info" => info(&args[1..], out),
         "diff" => diff(&args[1..], out),
+        "components" => components(&args[1..], out),
         _ => pipeline(args),
     }
 }
@@ -262,4 +275,42 @@ fn diff(args: &[String], out: &mut dyn Write) -> Result<i32, CliError> {
             Ok(EXIT_DIFFERENT)
         }
     }
+}
+
+fn components(args: &[String], out: &mut dyn Write) -> Result<i32, CliError> {
+    let mut paths = Vec::new();
+    let mut threshold = 127u8;
+    let mut connectivity = Connectivity::Eight;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        if arg != "--threshold" && arg != "--connectivity" {
+            paths.push(arg.as_str());
+            continue;
+        }
+        let value = rest
+            .next()
+            .ok_or_else(|| CliError::usage(format!("components: {arg} needs a value")))?;
+        if arg == "--threshold" {
+            threshold = number("components", "threshold", value)?;
+        } else {
+            connectivity = Connectivity::from_name(value)
+                .ok_or_else(|| CliError::usage(format!("components: invalid connectivity '{value}'")))?;
+        }
+    }
+    let [path] = paths[..] else {
+        return Err(CliError::usage("components: expected exactly one file"));
+    };
+    let (image, _) = load(path)?;
+    let labeling = label_components(&image.to_gray(), connectivity, |p| p.0 > threshold);
+    let count = labeling.count();
+    writeln!(out, "{count} component{}", if count == 1 { "" } else { "s" })?;
+    for c in labeling.components() {
+        let (b, (cx, cy)) = (c.bounds, c.centroid);
+        writeln!(
+            out,
+            "{}: area {}, bounds {},{} {}x{}, centroid {cx:.2},{cy:.2}",
+            c.label, c.area, b.x, b.y, b.width, b.height
+        )?;
+    }
+    Ok(EXIT_OK)
 }
