@@ -2,6 +2,7 @@
 //! library.
 
 pub mod color;
+pub mod draw;
 pub mod dynimage;
 pub mod error;
 pub mod image;
